@@ -2,6 +2,7 @@ const sequelize = require('./index');
 
 require('../models/Stock');
 require('../models/Order');
+require('../models/Product');
 
 async function syncDatabase() {
   try {

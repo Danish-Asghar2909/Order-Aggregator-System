@@ -4,20 +4,30 @@ require('dotenv').config()
 const sequelize = require('./db/index')
 const syncDatabase = require('./db/syncData')
 
+const routes = require('./routes');
+const { initConsumers } = require('./sync/initConsumers');
+const { syncVendors } = require('./sync/vendorsFetcher');
+// const { startDashboard } = require('./monitor/dashboard');
+
 // Middleware
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// Basic route
-app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to the Order Aggregator System API' })
-})
+app.use('/', routes);
 
-syncDatabase().then(() => {
+syncDatabase().then(async () => {
+  try{
+    await syncVendors();         // ✅ This syncs vendor products on boot
+    await initConsumers();
+    // startDashboard();
     app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Server is running on http://localhost:${PORT}`);
     });
-  });
+  }catch(err){
+    console.error('Error initializing database:', err);
+  }
+
+});
 
 // Health check route
 app.get('/health', (req, res) => {
