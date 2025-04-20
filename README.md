@@ -2,7 +2,7 @@
 
 **Project Name:** Distributed Order Aggregator\
 **Tech Stack:** Node.js, Express, PostgreSQL, Sequelize, RabbitMQ\
-**Author:** *[Your Name]*\
+**Author:** Danish Asghar
 **Date:** April 2025
 
 ---
