@@ -17,7 +17,7 @@ app.use('/', routes);
 
 syncDatabase().then(async () => {
   try{
-    await syncVendors();         // ✅ This syncs vendor products on boot
+    await syncVendors();         // This syncs vendor products on boot
     await initConsumers();
     // startDashboard();
     app.listen(PORT, () => {

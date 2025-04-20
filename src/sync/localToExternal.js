@@ -14,34 +14,51 @@ const limiters = {
   vendorB: new Bottleneck({ minTime: 1000 }),
 };
 
+async function safeAssertQueue(channel, queueName, options = {}) {
+  try {
+    await channel.checkQueue(queueName);
+    console.log(`⚠️ Queue '${queueName}' already exists. Skipping assertion.`);
+  } catch (err) {
+    if (err.code === 404) {
+      console.log(`✅ Queue '${queueName}' not found. Creating...`);
+      await channel.assertQueue(queueName, options);
+    } else {
+      throw err;
+    }
+  }
+}
+
 async function consumeFromLocal() {
   const conn = await amqp.connect(process.env.RABBITMQ_URL);
   const ch = await conn.createChannel();
 
-  // Set up DLX (Dead Letter Exchange)
-  const dlxExchange = 'dlx_exchange';
+  const mainQueue = 'sync_to_external';
+  const dlqQueue = 'sync_to_external_dlq';
+  const dlxExchange = 'sync_to_external_dlx'; // Match existing DLX
+  const dlxRoutingKey = 'sync_to_external_dlq';
+
+  // Ensure DLX exchange exists
   await ch.assertExchange(dlxExchange, 'direct', { durable: true });
 
-  // Declare DLQ and bind it to the DLX
-  await ch.assertQueue('sync_to_external_dlq', { durable: true });
-  await ch.bindQueue('sync_to_external_dlq', dlxExchange, 'sync_to_external_dlq');
+  // DLQ creation (safe)
+  await safeAssertQueue(ch, dlqQueue, { durable: true });
+  await ch.bindQueue(dlqQueue, dlxExchange, dlxRoutingKey);
 
-  // Declare main queue with DLX settings
-  await ch.assertQueue('sync_to_external', {
+  // Main queue with DLX settings (safe)
+  await safeAssertQueue(ch, mainQueue, {
     durable: true,
     deadLetterExchange: dlxExchange,
-    deadLetterRoutingKey: 'sync_to_external_dlq',
+    deadLetterRoutingKey: dlxRoutingKey,
   });
 
-  // Start consuming messages
-  ch.consume('sync_to_external', async (msg) => {
+  ch.consume(mainQueue, async (msg) => {
     if (!msg) return;
 
     const { vendor, ...data } = JSON.parse(msg.content.toString());
-    console.log('📥 Received message:', data);
+    console.log('Received message:', data);
 
     if (await isDuplicate(data.id, vendor)) {
-      console.log('⚠️ Duplicate, skipping');
+      console.log('Duplicate, skipping');
       ch.ack(msg);
       return;
     }
@@ -51,7 +68,7 @@ async function consumeFromLocal() {
 
     if (!endpoint || !limiter) {
       console.error(`Unsupported vendor: ${vendor}`);
-      ch.nack(msg, false, false);
+      ch.nack(msg, false, false); // Send to DLQ
       return;
     }
 
@@ -70,7 +87,7 @@ async function consumeFromLocal() {
 
       if (attempts < maxRetries) {
         console.log(`Retrying... (Attempt ${attempts + 1})`);
-        ch.sendToQueue('sync_to_external', msg.content, {
+        ch.sendToQueue(mainQueue, msg.content, {
           persistent: true,
           headers: { 'x-retry': attempts + 1 },
         });
