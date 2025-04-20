@@ -51,7 +51,7 @@ router.get('/products', async (req, res, next) => {
       const conn = await amqp.connect(process.env.RABBITMQ_URL);
       const ch = await conn.createChannel();
   
-      handleOrderAndUpdateDB(req.body)
+      await handleOrderAndUpdateDB(req.body)
       // Declare DLX exchange and queue
       await ch.assertExchange('sync_to_external_dlx', 'direct', { durable: true });
       await ch.assertQueue('sync_to_external_dlq', { durable: true });
